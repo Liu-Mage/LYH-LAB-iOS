@@ -1,0 +1,51 @@
+name: iPhone simulator launch smoke test
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/ios-simulator-smoke.yml']
+permissions:
+  contents: read
+jobs:
+  simulate-launch:
+    runs-on: macos-15
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Build reviewed source for the iPhone simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '66da175dddfd02c71bac190d0fef3bf14d478486c756b2a0baa1482099a6f047  LYHLab-v0.1.1-source.zip' | shasum -a 256 -c -
+          unzip -q LYHLab-v0.1.1-source.zip -d source
+          mkdir -p smoke
+          cd source
+          xcodebuild -project LYHLab.xcodeproj -scheme LYHLab -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/lyhlab-sim" CODE_SIGNING_ALLOWED=NO build 2>&1 | tee ../smoke/simulator-build.log
+      - name: Launch on iPhone Simulator and capture SwiftUI
+        shell: bash
+        run: |
+          set -euo pipefail
+          UDID=$(xcrun simctl list devices available -j | python3 -c 'import json,re,sys; d=json.load(sys.stdin)["devices"]; v=lambda s: tuple(map(int,re.findall(r"[0-9]+",s))); print(next(item["udid"] for runtime in sorted((k for k in d if ".iOS-" in k),key=v,reverse=True) for item in d[runtime] if item.get("isAvailable",True) and item["name"].startswith("iPhone")))')
+          xcrun simctl boot "$UDID"
+          trap 'xcrun simctl shutdown "$UDID" || true' EXIT
+          python3 -c 'import subprocess,sys; subprocess.run(["xcrun","simctl","bootstatus",sys.argv[1],"-b"],check=True,timeout=190)' "$UDID"
+          xcrun simctl install "$UDID" "$RUNNER_TEMP/lyhlab-sim/Build/Products/Debug-iphonesimulator/LYHLab.app"
+          result=$(xcrun simctl launch "$UDID" cn.lyhlab.procurement)
+          echo "$result"
+          pid="${result##*: }"
+          [[ "$pid" =~ ^[0-9]+$ ]]
+          sleep 5
+          kill -0 "$pid"
+          xcrun simctl io "$UDID" screenshot smoke/iphone-launch.png
+          test -s smoke/iphone-launch.png
+          echo 'PASS: simulator process still running after launch; no production credentials or API calls.'
+      - name: Keep screenshot and simulator build log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: LYHLab-iPhone-simulator-smoke
+          path: smoke/
+          if-no-files-found: warn
+          retention-days: 7
