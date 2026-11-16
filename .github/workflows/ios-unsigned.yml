@@ -48,7 +48,7 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist")" = 'cn.lyhlab.procurement'
           /usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$APP/Info.plist"
           BIN=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Info.plist")
-          lipo -verify_arch arm64 "$APP/$BIN"
+          xcrun lipo "$APP/$BIN" -verify_arch arm64
           STAGE="$RUNNER_TEMP/lyhlab-ipa"
           mkdir -p "$STAGE/Payload"
           ditto "$APP" "$STAGE/Payload/LYHLab.app"
